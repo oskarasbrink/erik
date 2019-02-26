@@ -1,0 +1,205 @@
+
+	.dseg
+	.org SRAM_START
+Playerselect : .byte 1
+Player1 : .byte 8
+Player2 : .byte 8
+Players : .byte 8 
+
+	.macro JOYSTICK_X
+	ldi @0,(1<<adlar)
+	out admux,@0
+
+	sbi adcsra,adsc
+	sbic adcsra,adsc
+	rjmp pc-1
+	in @0, ADCH;
+	.endmacro
+
+
+	.macro INCSRAM ; inc byte in SRAM
+	ld r16 , @0
+	sbrs r16,7
+	lsr r16
+	st @0 , r16
+	.endmacro
+
+	.macro DECSRAM ; dec byte in SRAM
+	ld r16 , @0
+	sbrs r16,0
+	lsl r16
+	st @0 , r16
+	.endmacro
+	
+	.cseg
+
+START:
+
+	ldi r16,HIGH(ramend)
+	out SPH , r16
+	ldi r16,LOW(ramend)
+	out SPL , r16
+
+	call HW_INIT
+	
+	loop:
+	call Update_player
+
+	inreloop:
+
+	call Joystick
+
+//  call usart_transmit ; för att updatera
+//  call nån delay för att inte gå cp snabbt om de behövs
+
+//	sbis knapp ; kolla om vi ska släppa annars inreloop//knapp på b-porten
+	rjmp inreloop
+	
+	lds r16,player1+1
+	ld r17,Z
+	and r17,r16
+	cpi r17,0
+	brne not_legal
+	
+	lds r16,player2+1
+	ld r17,Z
+	and r17,r16
+	cpi r17,0
+	brne inreloop
+
+	call fall_animation
+
+	rjmp loop
+
+
+
+fall_animation:
+	ld r16,Z
+	ldi ZH,High(Player1+1)
+	ldi ZL,Low(Player1+1)
+
+falling:
+	mov r17,r16
+	ldd r18,Z+16 ; ladda med players alltså båda spelarnas positioner
+	mov r19,r18 ; spara rad under i temp
+
+	or r18,r17 ; or:a undre med övre
+
+	lds r20,playerselect
+
+	sbrs r20,0
+	rjmp spelare1
+
+	ldd r21,Z+8
+	add r21,r16
+	std z+8,r19
+
+;fixa detta imorn vet ej vad de gör atm
+
+	rjmp hejsvejs
+
+spelare1:
+	ld r21,Z
+	add r21,r16
+	st z,r19
+
+hejsvejs:
+
+	cp r19,r18
+	breq landed
+
+	rjmp falling
+	landed:
+
+	//delay?
+	
+	//spara rad under i temp
+	//or:a undre med övre
+	//and:a övre med temp
+
+
+	ret
+
+legal:
+	
+	lds YH,SPH
+	lds YL,SPL
+	
+	lds r16,player1+1
+	ld r17,Z
+	and r17,r16
+	cpi r17,0
+	brne not_legal
+	
+	lds r16,player2+1
+	ld r17,Z
+	and r17,r16
+	cpi r17,0
+	brne not_legal
+
+	ldi r16,1
+	std y+2,r16
+
+not_legal:
+	ret
+
+
+Joystick: ; borde funka tror vi
+
+	joystick_x r19
+	andi r19,$F0
+
+	cpi r19,$F0
+	brne INTE_Fram
+	incsram Z
+	INte_Fram:
+	cpi r19,$00
+	brne inte_bak
+	decsram Z
+	inte_bak:
+
+	ret
+
+
+Update_player:
+	lds r19, SRAM_START
+	inc r19
+	sts SRAM_START,r19
+	sbrs r19,0
+	rjmp playerone
+		
+	ldi ZH,High(Player2)
+	ldi ZL,Low(Player2)
+
+	rjmp finish
+playerone:
+	ldi ZH,High(Player1)
+	ldi ZL,Low(Player1)
+
+finish:
+	ret
+
+
+
+HW_INIT:
+
+	ldi ZH,High(Player1)
+	ldi ZL,Low(Player1)
+	ldi r16,25
+	clr r17
+	inteklar:
+	st Z+,r17
+	dec r16
+	brne inteklar
+
+	ldi r16,$F0;SKRIV UT GREJER
+	out ddra,r16;
+
+	ldi r16,(1<<adlar);	adc0 ingång vald
+	out admux,r16;			adlar=1, left adjust result.
+
+	ldi r16,(1<<aden);	aden=enable ((PRESCALE<<adps))? adps (adprescaler) sätts i varje fall i acsra (adc statusregister) (s.213 i PDF).
+	out adcsra,r16;	slår på strömmen till ad-hardwarewere
+
+	ret
+  
